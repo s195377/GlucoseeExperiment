@@ -699,7 +699,9 @@
     vegaEmbed(chartDiv, buildSpec(monthData, currentMode), { actions:false })
       .then(function(result) {
         result.view.addEventListener('click', function(event, item) {
-          if (item && item.datum && item.datum.dayKey) showReadings(item.datum.dayKey);
+          if (item && item.datum && item.datum.dayKey) {
+            showReadings(item.datum.dayKey);
+          }
         });
       });
     document.getElementById('reading-list').innerHTML =
@@ -1268,6 +1270,15 @@
       initDailyNav();
       initWeeklyNav();
       showRecentOnProfile();
+
+      // Re-render whichever screen is already active (e.g. set by experiment injection)
+      var activeScreen = document.querySelector('.screen.active');
+      if (activeScreen) {
+        var sid = activeScreen.id;
+        if (sid === 'screen-blood-data')   renderChart();
+        if (sid === 'screen-blood-weekly') renderWeekly();
+        if (sid === 'screen-blood-daily')  renderDaily();
+      }
     })
     .catch(function(e){ console.warn('CSV load failed:', e); });
 
