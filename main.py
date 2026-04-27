@@ -29,7 +29,7 @@ def launch_picker() -> None:
 
     def on_experiment_session():
         root.destroy()
-        experiment_environment.run("ObservableHQ Embed")
+        experiment_environment.run()
 
     def on_test_session():
         root.destroy()

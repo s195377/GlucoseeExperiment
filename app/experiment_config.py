@@ -7,7 +7,7 @@ Experiment structure:
 
   Section order is always:
     Days Graph 1 -> Days Graph 2 -> Weeks Graph 1 -> Weeks Graph 2
-    -> Months Graph 1 -> Months Graph 2
+    -> Months Graph 1 -> Months Graph 2 -> Months Graph 3
 
   Conditions:
     daily_line    = Line / dot plot          (screen-blood-daily)
@@ -19,6 +19,15 @@ Experiment structure:
     monthly_line  = Monthly dot/line plot    (screen-blood-monthly-line) <- injected
 
   Each condition has exactly 3 timed tasks.
+
+criteria types used in TASKS_BY_CONDITION:
+  "single_point" — last click matches dayKey + time (±tolerance_min minutes)
+  "specific_date"— last click has the given dayKey
+  "period"       — last click has the given period string
+  "date_range"   — last click dayKey falls in [from, to]
+  "low_in_month" — dayKey in month AND obs < threshold, or dayKey in valid_dates list
+  "two_dates"    — all required dates appear somewhere in clicked_points
+  "two_times"    — two specific times (± tolerance) appear in clicked_points on dayKey
 """
 from __future__ import annotations
 
@@ -54,31 +63,102 @@ SCREEN_IDS: dict[str, str] = {
 }
 
 # ── Tasks ──────────────────────────────────────────────────────────────────────
+# July 2024 dates that have at least one reading below 4.4 mmol/L (computed from data)
+_JULY_LOW_DATES: list[str] = [
+    "2024-07-02", "2024-07-06", "2024-07-09", "2024-07-10",
+    "2024-07-12", "2024-07-14", "2024-07-15", "2024-07-16",
+    "2024-07-18", "2024-07-20", "2024-07-21", "2024-07-26",
+]
+
 _DAILY_TASKS: list[dict] = [
-    {"question": "How many observations are outside of the normal area on July 20th?",
-     "answer":   "2"},
-    {"question": "Which time frame generally has the most observations: morning, afternoon, evening or night?",
-     "answer":   "Evening"},
-    {"question": "At what time does the lowest measured observation take place on September 14th?",
-     "answer":   "19:48"},
+    {
+        "question": "29. juli: Click the point that represents the start of a downward trend.",
+        "answer":   "11:59, Glucose 13.7 (Afternoon, July 29)",
+        "criteria": {
+            "type":          "single_point",
+            "dayKey":        "2024-07-29",
+            "minute_of_day": 11 * 60 + 59,  # 719
+            "tolerance_min": 5,
+        },
+    },
+    {
+        "question": "24. aug: Click on the observation that requires the most immediate attention.",
+        "answer":   "21:32, Glucose 10.8 (Evening, Aug 24)",
+        "criteria": {
+            "type":          "single_point",
+            "dayKey":        "2024-08-24",
+            "minute_of_day": 21 * 60 + 32,  # 1292
+            "tolerance_min": 5,
+        },
+    },
+    {
+        "question": "19. july: Click on the interval where the glucose level changes the least.",
+        "answer":   "Both 12:21 and 18:20 on July 19 (9.8 → 9.9 mmol/L)",
+        "criteria": {
+            "type":          "two_times",
+            "dayKey":        "2024-07-19",
+            "times":         [12 * 60 + 21, 18 * 60 + 20],  # minutes of day
+            "tolerance_min": 10,
+        },
+    },
 ]
 
 _WEEKLY_TASKS: list[dict] = [
-    {"question": "Which week has the most observations outside the normal area?",
-     "answer":   "Week 29 & Week 31 (14 observations each)"},
-    {"question": "Which time frame has the lowest observations over the week: morning, afternoon, evening or night?",
-     "answer":   "Evening"},
-    {"question": "What is the biggest leap in glucose level between 2 observations?",
-     "answer":   "July 26th to July 27th: 2.9 mmol/L to 13.2 mmol/L (difference: 10.3)"},
+    {
+        "question": "Week 29: Click a random observation on the day of the week that shows the worst glucose control.",
+        "answer":   "Any observation on Sunday July 21",
+        "criteria": {
+            "type": "specific_date",
+            "date": "2024-07-21",
+        },
+    },
+    {
+        "question": "Week 30: Click on the time period (Morning, Afternoon, Evening, Night) that appears most inconsistent across the week.",
+        "answer":   "Any Night observation",
+        "criteria": {
+            "type":   "period",
+            "period": "Night",
+        },
+    },
+    {
+        "question": "Week 26: Click on the two consecutive days where the glucose levels changed the most.",
+        "answer":   "Friday July 26 and Saturday July 27",
+        "criteria": {
+            "type":  "two_dates",
+            "dates": ["2024-07-26", "2024-07-27"],
+        },
+    },
 ]
 
 _MONTHLY_TASKS: list[dict] = [
-    {"question": "How big is the gap in data? Mark from where to where it goes.",
-     "answer":   "8 days - from August 7th to August 14th"},
-    {"question": "Which day has the very lowest measurement overall?",
-     "answer":   "July 26th, 2.9 mmol/L"},
-    {"question": "Which day has the very highest measurement overall?",
-     "answer":   "July 14th & July 30th, 16.7 mmol/L"},
+    {
+        "question": "August: Click on the week that has the most missing data.",
+        "answer":   "Any day between Aug 4 – Aug 17 (inclusive)",
+        "criteria": {
+            "type": "date_range",
+            "from": "2024-08-04",
+            "to":   "2024-08-17",
+        },
+    },
+    {
+        "question": "July: Click on a day where the glucose level dropped below the normal range.",
+        "answer":   "Any July date with a reading below 4.4 mmol/L",
+        "criteria": {
+            "type":         "low_in_month",
+            "month_prefix": "2024-07",
+            "threshold":    4.4,
+            "valid_dates":  _JULY_LOW_DATES,
+        },
+    },
+    {
+        "question": "September: Click on the week that shows the highest overall glucose levels.",
+        "answer":   "Any day between Sep 1 – Sep 7 (inclusive)",
+        "criteria": {
+            "type": "date_range",
+            "from": "2024-09-01",
+            "to":   "2024-09-07",
+        },
+    },
 ]
 
 TASKS_BY_CONDITION: dict[str, list[dict]] = {

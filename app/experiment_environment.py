@@ -53,6 +53,106 @@ def _mmss_to_seconds(raw: str) -> float | None:
         return None
 
 
+def _extract_date(point: dict) -> str | None:
+    """Return YYYY-MM-DD from a normalised clicked-point dict."""
+    if point.get("dayKey"):
+        return str(point["dayKey"])[:10]
+    for key in ("isoTime", "time"):
+        val = point.get(key)
+        if val:
+            return str(val)[:10]
+    return None
+
+
+def _extract_minute_of_day(point: dict) -> int | None:
+    """Return minutes-since-midnight (local time) from a normalised clicked-point dict.
+
+    Prefers the pre-computed ``minuteOfDay`` field (local time, set by JS using
+    displayTime.getHours()) to avoid UTC-offset errors with toISOString().
+    """
+    mod = point.get("minuteOfDay")
+    if mod is not None:
+        try:
+            return int(mod)
+        except (ValueError, TypeError):
+            pass
+    # UTC fallback — may be wrong if browser timezone != UTC
+    for key in ("isoTime", "time"):
+        val = point.get(key)
+        if not val:
+            continue
+        try:
+            s = str(val)
+            h, m = int(s[11:13]), int(s[14:16])
+            return h * 60 + m
+        except (ValueError, IndexError):
+            continue
+    return None
+
+
+def evaluate_answer(condition: str, task_idx: int, clicked_points: list) -> bool | None:
+    """
+    Auto-evaluate whether the participant's clicked points constitute a correct answer.
+    Returns True / False, or None if evaluation is not possible (no clicks / no criteria).
+    """
+    tasks = experiment_config.TASKS_BY_CONDITION.get(condition, [])
+    if task_idx >= len(tasks) or not clicked_points:
+        return None
+    criteria = tasks[task_idx].get("criteria")
+    if not criteria:
+        return None
+
+    ctype = criteria["type"]
+    last  = clicked_points[-1]  # the final click is treated as the primary answer
+
+    if ctype == "single_point":
+        if _extract_date(last) != criteria.get("dayKey"):
+            return False
+        mod = _extract_minute_of_day(last)
+        return mod is not None and abs(mod - criteria["minute_of_day"]) <= criteria.get("tolerance_min", 5)
+
+    if ctype == "specific_date":
+        return _extract_date(last) == criteria["date"]
+
+    if ctype == "period":
+        return last.get("period") == criteria["period"]
+
+    if ctype == "date_range":
+        d = _extract_date(last)
+        return d is not None and criteria["from"] <= d <= criteria["to"]
+
+    if ctype == "low_in_month":
+        d = _extract_date(last)
+        if d is None:
+            return False
+        obs = last.get("observation") if last.get("observation") is not None else last.get("val")
+        if obs is not None:
+            return d.startswith(criteria["month_prefix"]) and float(obs) < criteria["threshold"]
+        # Calendar click: only dayKey available — check precomputed list
+        return d in criteria.get("valid_dates", [])
+
+    if ctype == "two_dates":
+        required      = set(criteria["dates"])
+        clicked_dates = {_extract_date(p) for p in clicked_points if _extract_date(p)}
+        return required.issubset(clicked_dates)
+
+    if ctype == "two_times":
+        req_day = criteria.get("dayKey")
+        tol     = criteria.get("tolerance_min", 10)
+        for req_min in criteria["times"]:
+            found = any(
+                (not req_day or _extract_date(p) == req_day)
+                and (mod := _extract_minute_of_day(p)) is not None
+                and abs(mod - req_min) <= tol
+                for p in clicked_points
+            )
+            if not found:
+                return False
+        return True
+
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Pre-session form
 # ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +262,14 @@ def _inject_experiment(html: str, first_condition: str,
     border: none; border-radius: 13px; cursor: pointer;
     box-shadow: 0 4px 16px rgba(34,197,94,0.35);
   }
+  /* ═══ Hide reading logs in experiment — participants must use the chart ═══ */
+  #daily-list,
+  #weekly-list,
+  #reading-list,
+  #daily-bar-list,
+  #weekly-line-list,
+  #monthly-bar-list,
+  #monthly-line-list { display: none !important; }
 """
     html = re.sub(r'(</style>)', experiment_css + r'\1', html, count=1,
                   flags=re.IGNORECASE)
@@ -372,6 +480,45 @@ def _inject_experiment(html: str, first_condition: str,
     </div>
   </div>
 
+    <div id="screen-blood-daily" class="screen">
+    <div class="topbar">
+      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <span class="topbar-brand">Glucosee</span>
+      <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
+    </div>
+    <div class="chart-screen">
+      <div class="chart-header">
+        <div class="chart-header-title">Blood Sugar Levels</div>
+        <div class="chart-header-sub">Daily — Line</div>
+      </div>
+      <div class="chart-scroll">
+        <div id="daily-line-label" style="text-align:center;font-size:13px;font-weight:600;
+             color:#334155;flex-shrink:0;padding:2px 0;"></div>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+          <button onclick="prevDayLine()"
+                  style="background:none;border:2px solid #1a1a1a;border-radius:50%;
+                         width:30px;height:30px;font-size:16px;cursor:pointer;flex-shrink:0;">&#8249;</button>
+          <div id="daily-line-chart"
+               style="background:white;border-radius:10px;border:1px solid #e2e8f0;
+                      padding:4px;flex:1;min-width:0;overflow:hidden;"></div>
+          <button onclick="nextDayLine()"
+                  style="background:none;border:2px solid #1a1a1a;border-radius:50%;
+                         width:30px;height:30px;font-size:16px;cursor:pointer;flex-shrink:0;">&#8250;</button>
+        </div>
+        <div class="tabs" style="gap:5px;flex-shrink:0;">
+          <button class="tab active" onclick="setDayLinePeriod(this,'All')"       style="font-size:11px;padding:8px 0;">All</button>
+          <button class="tab"        onclick="setDayLinePeriod(this,'Morning')"   style="font-size:11px;padding:8px 0;">Morning</button>
+          <button class="tab"        onclick="setDayLinePeriod(this,'Afternoon')" style="font-size:11px;padding:8px 0;">Afternoon</button>
+          <button class="tab"        onclick="setDayLinePeriod(this,'Evening')"   style="font-size:11px;padding:8px 0;">Evening</button>
+          <button class="tab"        onclick="setDayLinePeriod(this,'Night')"     style="font-size:11px;padding:8px 0;">Night</button>
+        </div>
+        <div id="daily-line-list" style="background:white;border-radius:10px;
+             border:1px solid #e2e8f0;overflow:hidden;flex-shrink:0;font-size:13px;
+             max-height:220px;overflow-y:auto;">
+        </div>
+      </div>
+    </div>
+  </div>
   <!-- Daily bar-chart screen (injected — never written to index.html) -->
   <div id="screen-blood-daily-bar" class="screen">
     <div class="topbar">
@@ -424,14 +571,14 @@ def _inject_experiment(html: str, first_condition: str,
     # ── 4. Add onMeasurementClicked to Vega charts ────────────────────────
     html = html.replace(
         "if (item && item.datum && item.datum.dayKey) {\n            showReadings(item.datum.dayKey);\n          }",
-        "if (item && item.datum && item.datum.dayKey) {\n            showReadings(item.datum.dayKey);\n            onMeasurementClicked();\n          }"
+        "if (item && item.datum && item.datum.dayKey) {\n            showReadings(item.datum.dayKey);\n            onMeasurementClicked(item.datum);\n          }"
     )
     html = html.replace(
         "buildDailySpec(dayData, dayStr, currentDayFilter), { actions: false });",
         "buildDailySpec(dayData, dayStr, currentDayFilter), { actions: false })\n"
         "      .then(function(result) {\n"
         "        result.view.addEventListener('click', function(event, item) {\n"
-        "          if (item && item.datum) onMeasurementClicked();\n"
+        "          if (item && item.datum) onMeasurementClicked(item.datum);\n"
         "        });\n"
         "      });"
     )
@@ -440,7 +587,7 @@ def _inject_experiment(html: str, first_condition: str,
         "buildWeeklySpec(weekData, currentWeekFilter), { actions: false })\n"
         "      .then(function(result) {\n"
         "        result.view.addEventListener('click', function(event, item) {\n"
-        "          if (item && item.datum) onMeasurementClicked();\n"
+        "          if (item && item.datum) onMeasurementClicked(item.datum);\n"
         "        });\n"
         "      });"
     )
@@ -485,6 +632,8 @@ def _inject_experiment(html: str, first_condition: str,
     var _taskTimings       = {{}};
     var _pendingScreen     = null;
     var _conditionOrderIdx = 0;
+    var _clickCounts       = {{}};   // total clicks per condition (error-test metric)
+    var _currentTaskClicks = [];     // accumulated normalised clicks for current task
 
     function openTaskIntro(condition) {{
       _activeCondition   = condition;
@@ -501,22 +650,56 @@ def _inject_experiment(html: str, first_condition: str,
 
     function startTask() {{
       if (!_pendingScreen) return;
-      _taskStartTime = Date.now();
+      _currentTaskClicks = [];
+      _taskStartTime     = Date.now();
       _updateTaskBanner();
       navigate(_pendingScreen);
     }}
 
-    function onMeasurementClicked() {{
-      if (!_activeCondition) return;
+    function onMeasurementClicked(data) {{
+      if (!_activeCondition || !data) return;
+      // Normalise to a consistent shape regardless of which chart was clicked
+      var isoT = data.isoTime || (data.time ? String(data.time) : null);
+      var dayK = data.dayKey  || (isoT ? isoT.substring(0, 10) : null);
+      // Use local-time hours/minutes to avoid UTC-offset errors with toISOString()
+      var mod = null;
+      if (data.displayTime && typeof data.displayTime.getHours === 'function') {{
+        mod = data.displayTime.getHours() * 60 + data.displayTime.getMinutes();
+      }} else if (data.localH != null) {{
+        mod = data.localH * 60 + (data.localM || 0);
+      }}
+      var normalized = {{
+        isoTime:     isoT,
+        minuteOfDay: mod,
+        observation: data.observation != null ? data.observation : (data.val != null ? data.val : null),
+        period:      data.period || null,
+        dayKey:      dayK
+      }};
+      _currentTaskClicks.push(normalized);
+      if (!_clickCounts[_activeCondition]) _clickCounts[_activeCondition] = 0;
+      _clickCounts[_activeCondition]++;
+      var n   = _currentTaskClicks.length;
+      var lbl = '✓  Confirm (' + n + ' point' + (n === 1 ? '' : 's') + ' selected)';
+      document.getElementById('answer-btn').textContent = lbl;
       document.getElementById('answer-wrap').style.display = 'block';
     }}
 
     function submitTaskAnswer() {{
+      if (_currentTaskClicks.length === 0) {{
+        alert('Please click on an observation before confirming.');
+        return;
+      }}
       document.getElementById('answer-wrap').style.display = 'none';
+      document.getElementById('answer-btn').textContent = '✓  This is my answer';
       var elapsed = _taskStartTime ? (Date.now() - _taskStartTime) / 1000 : null;
       if (!_taskTimings[_activeCondition]) _taskTimings[_activeCondition] = [];
-      _taskTimings[_activeCondition].push(elapsed);
+      _taskTimings[_activeCondition].push({{
+        seconds:       elapsed,
+        clickedPoints: _currentTaskClicks.slice()
+      }});
       window.__taskTimings = _taskTimings;
+      window.__clickCounts = _clickCounts;
+      _currentTaskClicks   = [];
 
       _taskIdx++;
       var questions = window.__taskQuestions[_activeCondition] || [];
@@ -630,7 +813,7 @@ def _inject_experiment(html: str, first_condition: str,
             encoding: {{
               x: {{ field: 'isoTime', type: 'temporal' }},
               y: {{ field: 'observation', type: 'quantitative' }},
-              color: {{ condition: {{ test: 'datum.observation > 10', value: '#ef4444' }}, value: '#3b82f6' }},
+              color: {{ condition: {{ test: 'datum.observation > 10', value: '#ef4444' }}, value: '#ef4444' }},
               opacity: opacityBar
             }}
           }}
@@ -650,7 +833,7 @@ def _inject_experiment(html: str, first_condition: str,
                 buildDailyBarSpec(dayData, dayStr, currentDayBarFilter), {{ actions: false }})
         .then(function(result) {{
           result.view.addEventListener('click', function(event, item) {{
-            if (item && item.datum) onMeasurementClicked();
+            if (item && item.datum) onMeasurementClicked(item.datum);
           }});
         }});
 
@@ -662,7 +845,8 @@ def _inject_experiment(html: str, first_condition: str,
         var ts2 = r.displayTime.toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit',hour12:false}});
         var bl  = (hi && currentDayBarFilter !== 'All') ? col : 'transparent';
         var shortL = {{ Morning:'M', Afternoon:'A', Evening:'E', Night:'N' }}[r.period] || '?';
-        return '<div onclick="onMeasurementClicked()" '
+        var dataJson = JSON.stringify({{time: r.displayTime.toISOString(), val: r.observation, localH: r.displayTime.getHours(), localM: r.displayTime.getMinutes(), dayKey: r.dayKey, period: r.period}}).replace(/"/g, '&quot;');
+        return '<div onclick="onMeasurementClicked(' + dataJson + ')" '          
           + 'style="display:flex;align-items:center;cursor:pointer;background:'+th.bg
           +';border-bottom:1px solid #f1f5f9;border-left:4px solid '+bl
           +';opacity:'+(hi?'1':'0.2')+'">'
@@ -769,7 +953,7 @@ def _inject_experiment(html: str, first_condition: str,
             encoding: {{
               x: {{ field: 'isoTime', type: 'temporal' }},
               y: {{ field: 'observation', type: 'quantitative' }},
-              color: {{ condition: {{ test: 'datum.observation > 10', value: '#ef4444' }}, value: '#3b82f6' }},
+              color: {{ condition: {{ test: 'datum.observation > 10', value: '#ef4444' }}, value: '#ef4444' }},
               opacity: opacityDot
             }}
           }}
@@ -801,7 +985,7 @@ def _inject_experiment(html: str, first_condition: str,
                 {{ actions: false }})
         .then(function(result) {{
           result.view.addEventListener('click', function(event, item) {{
-            if (item && item.datum) onMeasurementClicked();
+            if (item && item.datum) onMeasurementClicked(item.datum);
           }});
         }});
 
@@ -815,7 +999,8 @@ def _inject_experiment(html: str, first_condition: str,
         var ts2 = r.displayTime.toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit',hour12:false}});
         var bl  = (hi && currentMonthBarFilter !== 'All') ? col : 'transparent';
         var shortL = {{ Morning:'M', Afternoon:'A', Evening:'E', Night:'N' }}[r.period] || '?';
-        return '<div onclick="onMeasurementClicked()" '
+        var dataJson = JSON.stringify({{time: r.displayTime.toISOString(), val: r.observation, localH: r.displayTime.getHours(), localM: r.displayTime.getMinutes(), dayKey: r.dayKey, period: r.period}}).replace(/"/g, '&quot;');
+        return '<div onclick="onMeasurementClicked(' + dataJson + ')" '
           + 'style="display:flex;align-items:center;cursor:pointer;background:'+th.bg
           +';border-bottom:1px solid #f1f5f9;border-left:4px solid '+bl
           +';opacity:'+(hi?'1':'0.18')+'">'
@@ -913,9 +1098,8 @@ def _inject_experiment(html: str, first_condition: str,
                    strokeJoin: 'round', opacity: 0.18 }},
           encoding: {{
             x: xEnc, y: yEnc,
-            color: {{ field: 'period', type: 'nominal',
-                      scale: {{ domain: periodDomain, range: periodColors }}, legend: null }},
-            detail: {{ field: 'period' }}
+            color: {{ value: '#94a3b8' }},
+            detail: {{ field: 'dayKey' }}
           }}
         }});
         // Area shading for selected period
@@ -934,11 +1118,12 @@ def _inject_experiment(html: str, first_condition: str,
         }});
       }}
 
-      // Dots — always on top
+      // Dots — always on top, all observations, outliers highlighted red
       layers.push({{
-        mark: {{ type: 'circle', size: 50, stroke: 'white', strokeWidth: 1.5, tooltip: true }},
+        mark: {{ type: 'circle', size: 35, stroke: 'white', strokeWidth: 1, tooltip: true }},
         encoding: {{
-          x: xEnc, y: yEnc,
+          x: xEnc,
+          y: yEnc,
           color: {{
             condition: {{ test: 'datum.observation > 10 || datum.observation < 4.4',
                           value: '#ef4444' }},
@@ -947,7 +1132,7 @@ def _inject_experiment(html: str, first_condition: str,
           }},
           opacity: opacityDot,
           tooltip: [
-            {{ field: 'isoTime',     type: 'temporal',    title: 'Time',    format: '%e %b \u00b7 %H:%M' }},
+            {{ field: 'isoTime',     type: 'temporal',    title: 'Time',    format: '%a %e %b \u00b7 %H:%M' }},
             {{ field: 'observation', type: 'quantitative', title: 'Glucose', format: '.1f' }},
             {{ field: 'period',      type: 'nominal',      title: 'Period' }}
           ]
@@ -985,7 +1170,7 @@ def _inject_experiment(html: str, first_condition: str,
                 {{ actions: false }})
         .then(function(result) {{
           result.view.addEventListener('click', function(event, item) {{
-            if (item && item.datum) onMeasurementClicked();
+            if (item && item.datum) onMeasurementClicked(item.datum);
           }});
         }});
 
@@ -1028,6 +1213,8 @@ def _inject_experiment(html: str, first_condition: str,
         : '<div class="chart-loading">No data for this month</div>';
     }}
 
+    
+    
     // ── Weekly line-chart helpers ─────────────────────────────────────────
     var currentWeekLineIdx    = 0;
     var currentWeekLineFilter = 'All';
@@ -1099,18 +1286,19 @@ def _inject_experiment(html: str, first_condition: str,
       ];
 
       // Period selected → add background thin lines + area shading + bold line for that period
-      if (filter !== 'All' && periodColor) {{
+      
         // Thin faint lines for ALL periods in the background
         layers.push({{
           mark: {{ type: 'line', interpolate: 'monotone', size: 1.2,
-                   strokeJoin: 'round', opacity: 0.18 }},
+                   strokeJoin: 'round', opacity: 0.18, invalid: "filter" }},
+          transform: [{{ sort: [{{ field: "isotime" }}] }}],
           encoding: {{
             x: xEnc, y: yEnc,
-            color: {{ field: 'period', type: 'nominal',
-                      scale: {{ domain: periodDomain, range: periodColors }}, legend: null }},
-            detail: {{ field: 'period' }}
+            color: {{ value: '#94a3b8'}},
+            detail: {{ datum: 'unbroken_path' }}
           }}
         }});
+        if (filter !== 'All' && periodColor) {{
         // Area shading for selected period
         layers.push({{
           mark: {{ type: 'area', interpolate: 'monotone', color: periodColor, opacity: 0.15,
@@ -1129,7 +1317,7 @@ def _inject_experiment(html: str, first_condition: str,
 
       // Dots — always on top
       layers.push({{
-        mark: {{ type: 'circle', size: 60, stroke: 'white', strokeWidth: 1.5, tooltip: true }},
+        mark: {{ type: 'circle', size: 35, stroke: 'white', strokeWidth: 1, tooltip: true }},
         encoding: {{
           x: xEnc,
           y: yEnc,
@@ -1141,7 +1329,7 @@ def _inject_experiment(html: str, first_condition: str,
           }},
           opacity: opacityDot,
           tooltip: [
-            {{ field: 'isoTime',     type: 'temporal',    title: 'Time',    format: '%a %e %b \u00b7 %H:%M' }},
+            {{ field: 'isoTime',     type: 'temporal',    title: 'Time',    format: '%a %e %b · %H:%M' }},
             {{ field: 'observation', type: 'quantitative', title: 'Glucose', format: '.1f' }},
             {{ field: 'period',      type: 'nominal',      title: 'Period' }}
           ]
@@ -1166,7 +1354,7 @@ def _inject_experiment(html: str, first_condition: str,
       }}
       updateWeeklyLineLabel();
       var startTs  = weeklyStartDays[currentWeekLineIdx];
-      var endTs    = startTs + 7*24*60*60*1000;
+      var endTs    = startTs + 7 * 24 * 60 * 60 * 1000;
       var weekData = chartData.filter(function(d) {{
         var t = d.displayTime.getTime(); return t >= startTs && t < endTs;
       }});
@@ -1176,7 +1364,7 @@ def _inject_experiment(html: str, first_condition: str,
                 {{ actions: false }})
         .then(function(result) {{
           result.view.addEventListener('click', function(event, item) {{
-            if (item && item.datum) onMeasurementClicked();
+            if (item && item.datum) onMeasurementClicked(item.datum);
           }});
         }});
 
@@ -1190,7 +1378,8 @@ def _inject_experiment(html: str, first_condition: str,
         var ts2 = r.displayTime.toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit',hour12:false}});
         var bl  = (hi && currentWeekLineFilter !== 'All') ? col : 'transparent';
         var shortL = {{ Morning:'M', Afternoon:'A', Evening:'E', Night:'N' }}[r.period] || '?';
-        return '<div onclick="onMeasurementClicked()" '
+        var dataJson = JSON.stringify({{time: r.displayTime.toISOString(), val: r.observation, localH: r.displayTime.getHours(), localM: r.displayTime.getMinutes(), dayKey: r.dayKey, period: r.period}}).replace(/"/g, '&quot;');
+        return '<div onclick="onMeasurementClicked(' + dataJson + ')" '
           + 'style="display:flex;align-items:center;cursor:pointer;background:'+th.bg
           +';border-bottom:1px solid #f1f5f9;border-left:4px solid '+bl
           +';opacity:'+(hi?'1':'0.18')+'">'
@@ -1218,6 +1407,111 @@ def _inject_experiment(html: str, first_condition: str,
           + rows
         : '<div class="chart-loading">No data for this week</div>';
     }}
+    
+        // ── Daily line-chart helpers (Dedicated to single-day view) ──────────
+function buildDailyLineSpec(dayData, filter, dayStr) {{
+  var enriched = dayData.map(function(d) {{
+    return Object.assign({{}}, d, {{ isoTime: d.displayTime.toISOString() }});
+  }});
+  
+  // Set the domain to cover exactly one full day to prevent "jumping"
+  var startISO = dayStr + 'T00:00:00';
+  var endISO   = dayStr + 'T23:59:59';
+  var periodColors = ['#f59e0b', '#10b981', '#6366f1', '#64748b'];
+  var periodDomain = ['Morning', 'Afternoon', 'Evening', 'Night'];
+
+  return {{
+    $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+    data: {{ values: enriched }},
+    width: 'container', height: 180,
+    autosize: {{ type: 'fit', contains: 'padding' }},
+    layer: [
+      // Normal-range band background
+      {{ mark: {{ type: 'rect', color: '#dcfce7', opacity: 0.45 }},
+         encoding: {{ y: {{ datum: 4.4, type: 'quantitative' }}, y2: {{ datum: 10 }} }} }},
+      // The Unbroken Trend Line
+      {{
+        mark: {{ 
+          type: 'line', interpolate: 'monotone', size: 2, 
+          strokeJoin: 'round', opacity: 0.18, color: '#94a3b8',
+          invalid: "filter" 
+        }},
+        encoding: {{
+          x: {{ 
+            field: 'isoTime', type: 'temporal', 
+            scale: {{ domain: [startISO, endISO] }}, 
+            axis: {{ format: '%H:%M', title: null, grid: true, gridColor: '#f1f5f9' }} 
+          }},
+          y: {{ 
+            field: 'observation', type: 'quantitative', 
+            scale: {{ domain: [0, 20] }},
+            axis: {{ title: 'mmol/l', gridColor: '#f1f5f9' }} 
+          }},
+          detail: {{ datum: "unbroken_path" }} 
+        }}
+      }},
+      // The Colored Dots
+      {{
+        mark: {{ type: 'circle', size: 50, stroke: 'white', strokeWidth: 1, tooltip: true }},
+        encoding: {{
+          x: {{ field: 'isoTime', type: 'temporal' }},
+          y: {{ field: 'observation', type: 'quantitative' }},
+          color: {{
+            condition: {{ test: 'datum.observation > 10 || datum.observation < 4.4', value: '#ef4444' }},
+            field: 'period', type: 'nominal',
+            scale: {{ domain: periodDomain, range: periodColors }},
+            legend: null
+          }},
+          opacity: filter === 'All'
+            ? {{ value: 1 }}
+            : {{ condition: {{ test: "datum.period === '" + filter + "'", value: 1 }}, value: 0.1 }}
+        }}
+      }}
+    ],
+    config: {{ view: {{ stroke: null }} }}
+  }};
+}}
+
+function renderDailyLine() {{
+  if (!chartData || !dailyStartDays || !dailyStartDays.length) return;
+  var key = dailyStartDays[currentDayIdx];
+  document.getElementById('daily-line-label').textContent =
+    new Date(key + 'T12:00:00').toLocaleDateString('en-GB',
+      {{ weekday:'short', day:'numeric', month:'long', year:'numeric' }});
+  var dayStr  = dailyStartDays[currentDayIdx];
+  // Filter for ONLY this day and ensure it is sorted chronologically
+  var dayData = chartData.filter(function(d){{ return d.dayKey === dayStr; }})
+                         .sort(function(a,b){{ return a.displayTime - b.displayTime; }});
+
+  vegaEmbed(document.getElementById('daily-line-chart'),
+            buildDailyLineSpec(dayData, currentDayLineFilter, dayStr), {{ actions: false }})
+    .then(function(result) {{
+      result.view.addEventListener('click', function(event, item) {{
+        if (item && item.datum) onMeasurementClicked(item.datum);
+      }});
+    }});
+}}
+
+var currentDayLineFilter = 'All';
+
+function prevDayLine() {{
+  if (currentDayIdx > 0) {{ currentDayIdx--; renderDailyLine(); }}
+}}
+function nextDayLine() {{
+  if (currentDayIdx < dailyStartDays.length - 1) {{ currentDayIdx++; renderDailyLine(); }}
+}}
+function setDayLinePeriod(btn, period) {{
+  var tabs = btn.closest('.tabs').querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+  btn.classList.add('active');
+  currentDayLineFilter = period;
+  renderDailyLine();
+}}
+
+    // ── Experiment starting positions ─────────────────────────────────────
+    var EXPERIMENT_DAY      = '2024-08-19';                    // Days opens on Aug 19
+    var EXPERIMENT_WEEK_TS  = new Date(2024, 7, 19).getTime(); // Weeks: week of Aug 19
+    var EXPERIMENT_MONTH    = '2024-08';                       // Months opens on August
 
     // Navigate to the first task intro on load
     document.addEventListener('DOMContentLoaded', function () {{
@@ -1225,7 +1519,32 @@ def _inject_experiment(html: str, first_condition: str,
       window.navigate = function(id) {{
         window.__visitLog = window.__visitLog || [];
         window.__visitLog.push({{ screen: id, t: new Date().toISOString() }});
+
+        // Set starting position before each screen renders
+        if (id === 'screen-blood-daily' || id === 'screen-blood-daily-bar') {{
+          var di = dailyStartDays ? dailyStartDays.indexOf(EXPERIMENT_DAY) : -1;
+          if (di !== -1) currentDayIdx = di;
+        }}
+        if (id === 'screen-blood-weekly' || id === 'screen-blood-weekly-line') {{
+          var wi = weeklyStartDays ? weeklyStartDays.findIndex(function(ts) {{
+            return ts <= EXPERIMENT_WEEK_TS && EXPERIMENT_WEEK_TS < ts + 7*24*60*60*1000;
+          }}) : -1;
+          if (wi !== -1) {{ currentWeekIdx = wi; currentWeekLineIdx = wi; }}
+          _weekLineInitialized = true;
+        }}
+        if (id === 'screen-blood-monthly-line' || id === 'screen-blood-monthly-bar') {{
+          var mi = availableMonths ? availableMonths.indexOf(EXPERIMENT_MONTH) : -1;
+          if (mi !== -1) {{ currentMonthLineIdx = mi; currentMonthBarIdx = mi; }}
+          _monthLineInitialized = true;
+          _monthBarInitialized  = true;
+        }}
+        if (id === 'screen-blood-data') {{
+          if (availableMonths && availableMonths.indexOf(EXPERIMENT_MONTH) !== -1)
+            currentMonth = EXPERIMENT_MONTH;
+        }}
+
         _origNav(id);
+        if (id === 'screen-blood-daily')        renderDailyLine();
         if (id === 'screen-blood-daily-bar')    renderDailyBar();
         if (id === 'screen-blood-weekly-line')  renderWeeklyLine();
         if (id === 'screen-blood-monthly-line') renderMonthlyLine();
@@ -1237,7 +1556,8 @@ def _inject_experiment(html: str, first_condition: str,
     function finishExperiment() {{
       var payload = JSON.stringify({{
         visited:     window.__visitLog    || [],
-        taskTimings: window.__taskTimings || {{}}
+        taskTimings: window.__taskTimings || {{}},
+        clickCounts: window.__clickCounts || {{}}
       }});
       var xhr = new XMLHttpRequest();
       xhr.open('POST', '/experiment_log', false);
@@ -1250,7 +1570,8 @@ def _inject_experiment(html: str, first_condition: str,
     window.addEventListener('beforeunload', function () {{
       var payload = JSON.stringify({{
         visited:     window.__visitLog    || [],
-        taskTimings: window.__taskTimings || {{}}
+        taskTimings: window.__taskTimings || {{}},
+        clickCounts: window.__clickCounts || {{}}
       }});
       var xhr = new XMLHttpRequest();
       xhr.open('POST', '/experiment_log', false);
@@ -1306,8 +1627,8 @@ def _patch_html_runner_with_log(log_store: list) -> None:
                         payload = json.loads(body)
                         log_store.clear()
                         log_store.append(payload)
-                    except Exception:
-                        pass
+                    except json.JSONDecodeError as e:
+                        print(f"Failed to parse experiment log: {e}")
                     self.send_response(204)
                     self.end_headers()
                 else:
@@ -1532,13 +1853,24 @@ def run(_legacy_arg: str = "") -> None:
     ts_end          = datetime.now(timezone.utc)
     payload         = log_store[0] if log_store else {}
     screens_visited = [e["screen"] for e in payload.get("visited", []) if "screen" in e]
-    app_task_timings = payload.get("taskTimings", {})  # {condition: [sec, sec, sec]}
+    app_task_timings = payload.get("taskTimings", {})
+    click_counts     = payload.get("clickCounts", {})
 
-    # ── 3. Build task results directly from JS-recorded timings ─────────
+    # ── 3. Build task results with auto-evaluated correctness ────────────
     task_results: dict[str, list[tuple]] = {}
     for cond in order:
-        auto_times = app_task_timings.get(cond, [])
-        task_results[cond] = [(t, None, "") for t in auto_times]
+        timings = app_task_timings.get(cond, [])
+        task_results[cond] = []
+        for i, entry in enumerate(timings):
+            clicked_points = entry.get("clickedPoints", [])
+            correct = evaluate_answer(cond, i, clicked_points)
+            task_results[cond].append((
+                entry.get("seconds"),
+                correct,
+                json.dumps(clicked_points),
+            ))
+
+    task_clicks = {cond: click_counts.get(cond, 0) for cond in order}
 
     # ── 4. Participant feedback ───────────────────────────────────────────
     feedback = _feedback_form()
@@ -1551,6 +1883,7 @@ def run(_legacy_arg: str = "") -> None:
         timestamp_start = ts_start,
         timestamp_end   = ts_end,
         screens_visited = screens_visited,
+        task_clicks     = task_clicks,
         task_results    = task_results,
         feedback        = feedback,
     )

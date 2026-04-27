@@ -36,6 +36,7 @@ def _fieldnames() -> list[str]:
     ]
     task_fields: list[str] = []
     for cond in experiment_config.CONDITIONS:
+        task_fields.append(f"{cond}_total_clicks")
         for i in range(experiment_config.TASKS_PER_CONDITION):
             task_fields += [
                 f"{cond}_task{i + 1}_seconds",
@@ -72,6 +73,7 @@ def log_session(
     timestamp_end: datetime,
     screens_visited: list[str],
     # {condition: [(seconds|None, correct|None, notes_str), ...]}
+    task_clicks: dict[str, int],
     task_results: dict[str, list[tuple]],
     feedback: list[str],
 ) -> None:
@@ -90,6 +92,7 @@ def log_session(
     }
 
     for cond in experiment_config.CONDITIONS:
+        row[f"{cond}_total_clicks"] = task_clicks.get(cond, 0)
         results = task_results.get(cond, [])
         for i in range(experiment_config.TASKS_PER_CONDITION):
             secs, correct, notes = results[i] if i < len(results) else (None, None, "")
