@@ -19,31 +19,43 @@ CSV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sessions.cs
 # ── Text constants ────────────────────────────────────────────────────────────
 
 DUMMY_INSTRUCTIONS = (
-    "Welcome to the test environment.\n\n"
-    "This is placeholder instruction text. Replace it with your real onboarding "
-    "or test instructions later.\n\n"
-    "When you are ready, click Start to continue."
+    "Thank you for taking the time to help us with this evaluation!.\n\n"
+    "First, we would like you to go through some tasks while you look at our prototype."
+    "As you go through these tasks, we want you to think out loud. \n"
+    "That means saying exactly what is going through your mind—what you are noticing,\n "
+    "what is confusing you, and why you are making the choices you make.\n\n"
+
+    "Secondly, we would like you to answer a short questionnaire related to the prototype you just went through.\n\n"
+    
+    "Please remember, this is not a test of your abilities; it is a test of the charts themselves. \n"
+    "There are no right or wrong answers, and your honest feedback is the most helpful thing for us. \n"
+    "If you go quiet for a while, we might gently remind you to keep talking. \n\n"
+    
+    "Do you have any questions before we start?"
 )
 
 WRITING_PROMPT = (
-    "Please describe your thoughts and observations below.\n"
-    "Think aloud and write whatever comes to mind."
+    "Task 1: Imagine you are reviewing this person's/your own glucose log for the day to help them/you understand their health patterns. As you look through the daily data, please talk out loud about what you see. I'd like you to identify which time of day looks the most difficult for them to manage—specifically look for the time when their levels are the most unstable, swinging both too high and too low—and describe what you think might be causing those fluctuations and how clear it is too see.\n"
+    "\n\n"
+    "Task 2: Look at the data for the week. Does there seem to be any specific patterns between the different time periods (morning, afternoon, evening)? What could be causing these differences?"
+    "\n\n"
+    "Task 3: Look at the data for the month. Are there any concerning trends to address? "
 )
 
 # ── Questionnaire content ─────────────────────────────────────────────────────
 
 SHORT_TERM_QUESTIONS = [
-    "The instruction was clear and easy to understand.",
-    "I feel confident that following this advice is safe.",
-    "This advice is easy to fit into my daily routine.",
-    "This feedback makes me feel more in control of my levels.",
+    "When in ‘days’ visualization, the color scheme makes it easier to understand glucose levels.",
+    "When in ‘days’ visualization, It is easy to see if the glucose measurement is within the normal level.",
+    "The ‘weeks’ visualization is easier to navigate than the ‘days’ visualization.",
+    "The time period buttons (morning, afternoon, evening, night) are a relevant feature.",
 ]
 
 LONG_TERM_QUESTIONS = [
-    "This insight told me something I didn't already know.",
-    "I find this information valuable for managing my health.",
-    "This insight would encourage me to talk to my doctor.",
-    "This information helps me plan for future lifestyle changes.",
+    "It is easier to navigate glucose levels when all days are available.",
+    "It is clear how the ‘average’ button works.",
+    "Long term tendencies of glucose levels are visible.",
+    "I would like to be able to choose a different visualization (bar plot/dot plot) when viewing an entire month.",
 ]
 
 SCALE_LABELS = ["Strongly\nDisagree", "Disagree", "Neutral", "Agree", "Strongly\nAgree"]
@@ -123,7 +135,7 @@ def open_comparative_screen(
 
     tk.Label(
         left,
-        text="Which type of feedback do you find more valuable for your daily life?",
+        text="Which type of insight do you find more valuable for your daily life?",
         wraplength=320,
         justify="left",
         font=("Arial", 10),
@@ -243,12 +255,12 @@ def open_likert_screen(parent: tk.Tk, test_id: str, thinking_aloud: str) -> None
     long_vars: list = []
 
     left_frame = tk.LabelFrame(
-        content, text="Short-term Feedback", font=("Arial", 11, "bold"), padx=16, pady=12
+        content, text="Short-term Insight", font=("Arial", 11, "bold"), padx=16, pady=12
     )
     left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
     right_frame = tk.LabelFrame(
-        content, text="Long-term Feedback", font=("Arial", 11, "bold"), padx=16, pady=12
+        content, text="Long-term Insight", font=("Arial", 11, "bold"), padx=16, pady=12
     )
     right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
