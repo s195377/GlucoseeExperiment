@@ -92,7 +92,7 @@ _DAILY_TASKS: list[dict] = [
         },
     },
     {
-        "question": "19. july: Click on the interval where the glucose level changes the least.",
+        "question": "19. july: Click on the two points to mark the interval with the least change.",
         "answer":   "Both 12:21 and 18:20 on July 19 (9.8 → 9.9 mmol/L)",
         "criteria": {
             "type":          "two_times",
@@ -105,7 +105,7 @@ _DAILY_TASKS: list[dict] = [
 
 _WEEKLY_TASKS: list[dict] = [
     {
-        "question": "Week 29: Click a random observation on the day of the week that shows the worst glucose control.",
+        "question": "Week 29: Click on a point on the day that shows the most fluctuation in glucose levels.",
         "answer":   "Any observation on Sunday July 21",
         "criteria": {
             "type": "specific_date",
@@ -113,19 +113,19 @@ _WEEKLY_TASKS: list[dict] = [
         },
     },
     {
-        "question": "Week 30: Click on the time period (Morning, Afternoon, Evening, Night) that appears most inconsistent across the week.",
-        "answer":   "Any Night observation",
+        "question": "Week 30: Click on the time period (Morning, Afternoon, Evening, Night) that struggles most with swinging between high and low extremes.",
+        "answer":   "Any Evening observation",
         "criteria": {
             "type":   "period",
-            "period": "Night",
+            "period": "Evening",
         },
     },
     {
-        "question": "Week 26: Click on the two consecutive days where the glucose levels changed the most.",
-        "answer":   "Friday July 26 and Saturday July 27",
+        "question": "Week 26: Click on the two consecutive days that both have high variation in glucose levels.",
+        "answer":   "Friday June 28 and Saturday June 29",
         "criteria": {
             "type":  "two_dates",
-            "dates": ["2024-07-26", "2024-07-27"],
+            "dates": ["2024-06-28", "2024-06-29"],
         },
     },
 ]
@@ -151,7 +151,7 @@ _MONTHLY_TASKS: list[dict] = [
         },
     },
     {
-        "question": "September: Click on the week that shows the highest overall glucose levels.",
+        "question": "September: Click on the week that shows the highest average glucose levels.",
         "answer":   "Any day between Sep 1 – Sep 7 (inclusive)",
         "criteria": {
             "type": "date_range",
