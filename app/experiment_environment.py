@@ -320,7 +320,7 @@ def _inject_experiment(html: str, first_condition: str,
   <!-- Task introduction screen (one per condition) -->
   <div id="screen-task-intro" class="screen">
     <div class="topbar">
-      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <button class="btn-back" onclick="navigate('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg></button>
       <span class="topbar-brand">Glucosee</span>
       <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
     </div>
@@ -357,7 +357,7 @@ def _inject_experiment(html: str, first_condition: str,
   <!-- Monthly bar screen (injected — never written to index.html) -->
   <div id="screen-blood-monthly-bar" class="screen">
     <div class="topbar">
-      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <button class="btn-back" onclick="navigate('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg></button>
       <span class="topbar-brand">Glucosee</span>
       <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
     </div>
@@ -399,7 +399,7 @@ def _inject_experiment(html: str, first_condition: str,
   <!-- Monthly line/dot screen (injected — never written to index.html) -->
   <div id="screen-blood-monthly-line" class="screen">
     <div class="topbar">
-      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <button class="btn-back" onclick="navigate('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg></button>
       <span class="topbar-brand">Glucosee</span>
       <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
     </div>
@@ -441,7 +441,7 @@ def _inject_experiment(html: str, first_condition: str,
   <!-- Weekly line-chart screen (injected — never written to index.html) -->
   <div id="screen-blood-weekly-line" class="screen">
     <div class="topbar">
-      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <button class="btn-back" onclick="navigate('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg></button>
       <span class="topbar-brand">Glucosee</span>
       <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
     </div>
@@ -482,7 +482,7 @@ def _inject_experiment(html: str, first_condition: str,
 
     <div id="screen-blood-daily" class="screen">
     <div class="topbar">
-      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <button class="btn-back" onclick="navigate('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg></button>
       <span class="topbar-brand">Glucosee</span>
       <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
     </div>
@@ -522,7 +522,7 @@ def _inject_experiment(html: str, first_condition: str,
   <!-- Daily bar-chart screen (injected — never written to index.html) -->
   <div id="screen-blood-daily-bar" class="screen">
     <div class="topbar">
-      <button class="btn-back" onclick="goBack()">&#8592;</button>
+      <button class="btn-back" onclick="navigate('screen-home')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg></button>
       <span class="topbar-brand">Glucosee</span>
       <button class="btn-menu" onclick="openDrawer()">&#9776;</button>
     </div>
